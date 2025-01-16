@@ -3,9 +3,7 @@
 if (! defined ( '_PS_VERSION_' )) {
 	exit ();
 }
-if (! function_exists ( "escribirLog" )) {
-	require_once ('src/TropipaySDK/tropipayLibrary.php');
-}
+
 if (! class_exists ( "TropipayAPI" )) {
 	require_once ('src/TropipaySDK/apiTropipayFinal.php');
 }
