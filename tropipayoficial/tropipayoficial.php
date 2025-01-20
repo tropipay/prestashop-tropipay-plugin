@@ -19,6 +19,10 @@ class Tropipayoficial extends PaymentModule
 	private $_html = '';
 	private $html = '';
 	private $_postErrors = array ();
+	private $environments = [
+		1 => 'https://www.tropipay.com',
+		2 => 'https://tropipay-dev.herokuapp.com'
+	];
 
 	public ILogger $logger; 
 	
@@ -30,6 +34,7 @@ class Tropipayoficial extends PaymentModule
 		$this->tab = 'payments_gateways';
 		$this->version = '2.2.0';
 		$this->author = 'TROPIPAY';
+
 		
 		if(_PS_VERSION_>=1.6){
 			$this->is_eu_compatible = 1;
@@ -53,27 +58,14 @@ class Tropipayoficial extends PaymentModule
 		) );
 		
 		// Establecer propiedades nediante los datos de config.
-		$this->env = $config ['TROPIPAY_URLTPV'];
-		switch ($this->env) {
-			case 1 : // Real
-				$this->urltpv = 'https://www.tropipay.com';
-				break;
-			case 2 : // Pruebas t
-				$this->urltpv = 'https://tropipay-dev.herokuapp.com';
-				break;
-		}
-		if (isset ( $config ['TROPIPAY_CLIENTID'] ))
-			$this->nombre = $config ['TROPIPAY_CLIENTID'];
-		if (isset ( $config ['TROPIPAY_CLIENTSECRET'] ))
-			$this->codigo = $config ['TROPIPAY_CLIENTSECRET'];
-		if (isset ( $config ['TROPIPAY_ERROR_PAGO'] ))
-			$this->error_pago = $config ['TROPIPAY_ERROR_PAGO'];
-		if (isset ( $config ['TROPIPAY_LOG'] ))
-			$this->activar_log = $config ['TROPIPAY_LOG'];
-		if (isset ( $config ['TROPIPAY_IDIOMAS_ESTADO'] ))
-			$this->idiomas_estado = $config ['TROPIPAY_IDIOMAS_ESTADO'];
-		if (isset($config['TROPIPAY_ESTADO_PEDIDO']))
-			$this->estado_pedido = $config['TROPIPAY_ESTADO_PEDIDO'];
+		$this->env = $this->environments[(int)$config ['TROPIPAY_URLTPV']] ?? null;
+		
+		$this->nombre = $config ['TROPIPAY_CLIENTID'] ?? null;
+		$this->codigo = $config ['TROPIPAY_CLIENTSECRET'] ?? null;
+		$this->error_pago = $config ['TROPIPAY_ERROR_PAGO'] ?? null;
+		$this->activar_log = $config ['TROPIPAY_LOG'] ?? null;
+		$this->idiomas_estado = $config ['TROPIPAY_IDIOMAS_ESTADO'] ?? null;
+		$this->estado_pedido = $config['TROPIPAY_ESTADO_PEDIDO'] ?? null;
 		
 		parent::__construct ();
 		
@@ -93,27 +85,31 @@ class Tropipayoficial extends PaymentModule
 			$this->warning = $this->l ( 'Faltan datos por configurar en el módulo de Tropipay.' );
 	}
 	
-	
-	public function install() {
-		if (! parent::install () 
-				|| ! Configuration::updateValue ( 'TROPIPAY_URLTPV', '0' ) 
-				|| ! Configuration::updateValue ( 'TROPIPAY_CLIENTID', $this->l ( 'Escriba el clientId de la API de Tropipay' ) ) 
-				|| ! Configuration::updateValue ( 'TROPIPAY_ERROR_PAGO', 'no' ) 
-				|| ! Configuration::updateValue ( 'TROPIPAY_LOG', 'si' ) 
-				|| ! Configuration::updateValue ( 'TROPIPAY_IDIOMAS_ESTADO', 'no' ) 
-				|| ! Configuration::updateValue ( 'TROPIPAY_ESTADO_PEDIDO', '2' )
-				|| ! $this->registerHook ( 'paymentReturn' ) 
-				|| ( _PS_VERSION_ >= 1.7 ? ! $this->registerHook ( 'paymentOptions' ) : ! $this->registerHook ( 'payment' ))
-				) {
-			return false;
-			
-			if ((_PS_VERSION_ > '1.5') && (!$this->registerHook('displayPaymentEU'))) {
-				return false;
-			}
-		}
-		$this->tratarJSON();
-		return true;
-	}
+	public function install()
+    {
+        if (!parent::install() || !$this->registerHooks() || !$this->initializeConfiguration()) {
+            return false;
+        }
+        $this->tratarJSON();
+        return true;
+    }
+
+	private function registerHooks()
+    {
+        return $this->registerHook('paymentReturn') &&
+            (_PS_VERSION_ >= 1.7 ? $this->registerHook('paymentOptions') : $this->registerHook('payment')) &&
+            (_PS_VERSION_ > '1.5' ? $this->registerHook('displayPaymentEU') : true);
+    }
+
+	private function initializeConfiguration()
+    {
+        return Configuration::updateValue('TROPIPAY_URLTPV', '0') &&
+            Configuration::updateValue('TROPIPAY_CLIENTID', $this->l('Escriba el clientId de la API de Tropipay')) &&
+            Configuration::updateValue('TROPIPAY_ERROR_PAGO', 'no') &&
+            Configuration::updateValue('TROPIPAY_LOG', 'si') &&
+            Configuration::updateValue('TROPIPAY_IDIOMAS_ESTADO', 'no') &&
+            Configuration::updateValue('TROPIPAY_ESTADO_PEDIDO', '2');
+    }
 	
 	/*
 	 * Tratamos el JSON es_addons_modules.json para que addons 
@@ -133,20 +129,17 @@ class Tropipayoficial extends PaymentModule
 		}
 	}
 	
-	
-	public function uninstall() {
-		// Valores a quitar si desinstalamos
-		if (!Configuration::deleteByName('TROPIPAY_URLTPV')
-			|| !Configuration::deleteByName('TROPIPAY_CLIENTID')
-			|| !Configuration::deleteByName('TROPIPAY_CLIENTSECRET')
-			|| !Configuration::deleteByName('TROPIPAY_ERROR_PAGO')
-			|| !Configuration::deleteByName('TROPIPAY_LOG')
-			|| !Configuration::deleteByName('TROPIPAY_IDIOMAS_ESTADO')
-			|| !Configuration::deleteByName('TROPIPAY_ESTADO_PEDIDO')
-			|| !parent::uninstall())
-			return false;
-		return true;
-	}
+	public function uninstall()
+    {
+        return Configuration::deleteByName('TROPIPAY_URLTPV') &&
+            Configuration::deleteByName('TROPIPAY_CLIENTID') &&
+            Configuration::deleteByName('TROPIPAY_CLIENTSECRET') &&
+            Configuration::deleteByName('TROPIPAY_ERROR_PAGO') &&
+            Configuration::deleteByName('TROPIPAY_LOG') &&
+            Configuration::deleteByName('TROPIPAY_IDIOMAS_ESTADO') &&
+            Configuration::deleteByName('TROPIPAY_ESTADO_PEDIDO') &&
+            parent::uninstall();
+    }
 	
 	private function _postValidation() {
 		// Si al enviar los datos del formulario de config. hay campos vacios, mostrar errores.
