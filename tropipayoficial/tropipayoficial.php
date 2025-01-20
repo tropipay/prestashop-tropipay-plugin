@@ -29,61 +29,71 @@ class Tropipayoficial extends PaymentModule
 	public function __construct() 
 	{		
 		$this->logger = new Logger();
-		$this->logFileName = 'log.log';
 		$this->name = 'tropipayoficial';
 		$this->tab = 'payments_gateways';
 		$this->version = '2.2.0';
 		$this->author = 'TROPIPAY';
 
-		
-		if(_PS_VERSION_>=1.6){
-			$this->is_eu_compatible = 1;
-			$this->ps_versions_compliancy = array ('min' => '1.6', 'max' => _PS_VERSION_);
-			$this->bootstrap = true;
-		}
-		//aa
+		$this->initializeProperties();
+		$this->loadConfiguration();
 		
 		$this->currencies = true;
 		$this->currencies_mode = 'checkbox';
 		
-		// Array config con los datos de config.
-		$config = Configuration::getMultiple ( array (
-				'TROPIPAY_URLTPV',
-				'TROPIPAY_CLIENTID',
-				'TROPIPAY_CLIENTSECRET',
-				'TROPIPAY_ERROR_PAGO',
-				'TROPIPAY_LOG',
-				'TROPIPAY_IDIOMAS_ESTADO' ,
-				'TROPIPAY_ESTADO_PEDIDO'
-		) );
-		
-		// Establecer propiedades nediante los datos de config.
-		$this->env = $this->environments[(int)$config ['TROPIPAY_URLTPV']] ?? null;
-		
-		$this->nombre = $config ['TROPIPAY_CLIENTID'] ?? null;
-		$this->codigo = $config ['TROPIPAY_CLIENTSECRET'] ?? null;
-		$this->error_pago = $config ['TROPIPAY_ERROR_PAGO'] ?? null;
-		$this->activar_log = $config ['TROPIPAY_LOG'] ?? null;
-		$this->idiomas_estado = $config ['TROPIPAY_IDIOMAS_ESTADO'] ?? null;
-		$this->estado_pedido = $config['TROPIPAY_ESTADO_PEDIDO'] ?? null;
-		
+		$this->env = $this->environments[(int)$this->config ['TROPIPAY_URLTPV']] ?? null;
 		parent::__construct ();
 		
-		$this->page = basename ( __FILE__, '.php' );
+		// $this->page = basename ( __FILE__, '.php' );
 		$this->displayName = $this->l ( 'Tropipay' );
 		$this->description = $this->l ( 'Aceptar pagos con tarjeta mediante Tropipay' );
 		
 		// Mostrar aviso si faltan datos de config.
-		if (! isset ( $this->urltpv ) 
-				|| ! isset ( $this->nombre )
-				|| ! isset ( $this->codigo )  
-				|| ! isset ( $this->error_pago ) 
-				|| ! isset ( $this->activar_log ) 
-				|| ! isset ( $this->idiomas_estado )
-				|| ! isset ( $this->estado_pedido))
-			
-			$this->warning = $this->l ( 'Faltan datos por configurar en el módulo de Tropipay.' );
+		if ($this->missingConfiguration()) {
+            $this->warning = $this->l('Faltan datos por configurar en el módulo de Tropipay.');
+        }
 	}
+
+	private function initializeProperties()
+    {
+        if (_PS_VERSION_ >= 1.6) {
+            $this->is_eu_compatible = 1;
+            $this->ps_versions_compliancy = array('min' => '1.6', 'max' => _PS_VERSION_);
+            $this->bootstrap = true;
+        }
+
+        $this->currencies = true;
+        $this->currencies_mode = 'checkbox';
+    }
+
+	private function loadConfiguration()
+    {
+        $this->config = Configuration::getMultiple(array(
+            'TROPIPAY_URLTPV',
+            'TROPIPAY_CLIENTID',
+            'TROPIPAY_CLIENTSECRET',
+            'TROPIPAY_ERROR_PAGO',
+            'TROPIPAY_LOG',
+            'TROPIPAY_IDIOMAS_ESTADO',
+            'TROPIPAY_ESTADO_PEDIDO'
+        ));
+
+        $this->setConfigurationProperties();
+    }
+
+	private function setConfigurationProperties()
+    {
+        $this->nombre = $this->config['TROPIPAY_CLIENTID'] ?? null;
+        $this->codigo = $this->config['TROPIPAY_CLIENTSECRET'] ?? null;
+        $this->error_pago = $this->config['TROPIPAY_ERROR_PAGO'] ?? null;
+        $this->activar_log = $this->config['TROPIPAY_LOG'] ?? null;
+        $this->idiomas_estado = $this->config['TROPIPAY_IDIOMAS_ESTADO'] ?? null;
+        $this->estado_pedido = $this->config['TROPIPAY_ESTADO_PEDIDO'] ?? null;
+    }
+
+	private function missingConfiguration()
+    {
+        return !isset($this->urltpv, $this->nombre, $this->codigo, $this->error_pago, $this->activar_log, $this->idiomas_estado, $this->estado_pedido);
+    }
 	
 	public function install()
     {
