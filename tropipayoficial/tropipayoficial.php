@@ -212,8 +212,8 @@ class Tropipayoficial extends PaymentModule
 				<table border="0" width="680" cellpadding="0" cellspacing="0" id="form">
 					<tr><td colspan="2">' . $this->l('Por favor completa los datos de configuración del comercio') . '.<br /><br /></td></tr>
 					<tr><td width="255"><label for="urltpv">' . $this->l('Entorno de Tropipay') . '</label></td><td width="425">' . $entornoOptions . '</td></tr>
-					<tr><td width="255"><label for="nombre">' . $this->l('clientId') . '</label></td><td width="425">' . $clientIdInput . '</td></tr>
-					<tr><td width="255"><label for="codigo">' . $this->l('clientSecret') . '</label></td><td width="425">' . $clientSecretInput . '</td></tr>
+					<tr><td width="255"><label for="nombre">' . $this->l('Client ID') . '</label></td><td width="425">' . $clientIdInput . '</td></tr>
+					<tr><td width="255"><label for="codigo">' . $this->l('Client Secret') . '</label></td><td width="425">' . $clientSecretInput . '</td></tr>
 				</table>
 			</fieldset>
 			<br>';
