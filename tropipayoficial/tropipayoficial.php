@@ -196,14 +196,14 @@ class Tropipayoficial extends PaymentModule
 		$this->html .= '<form action="' . $_SERVER['REQUEST_URI'] . '" method="post">';
 		$this->html .= $this->getTpvConfigurationFieldset();
 		$this->html .= $this->getCustomizationFieldset();
-		$this->html .= '<br><input class="button" name="btnSubmit" value="' . $this->l('Guardar configuración') . '" type="submit" />';
+		$this->html .= '<br><input class="btn-toolbar toolbar-box toolbar-btn" class="button" name="btnSubmit" value="' . $this->l('Guardar configuración') . '" type="submit" />';
 		$this->html .= '</form>';
 	}
 
 	private function getTpvConfigurationFieldset()
 	{
 		$entornoOptions = $this->getEntornoOptions();
-		$clientIdInput = $this->getInputField('nombre', $this->nombre);
+		$clientIdInput = $this->getInputField('nombre', "Escribe el client id del API de Tropipay");
 		$clientSecretInput = $this->getInputField('codigo', "Escribe el client secret", "password");
 
 		return '
@@ -252,9 +252,8 @@ class Tropipayoficial extends PaymentModule
 
 	private function getInputField($name, $defaultValue, $type = "text")
 	{	
-		$valueorPlaceHolder = Tools::getValue($name) ? 'value="'.Tools::getValue($name).'"' : 'placeholder="'.htmlentities($defaultValue).'"';
-
-		return "<input type=\"{$type}\" name=\"{$name}\" {$valueorPlaceHolder} autocomplete=\"new-password\" />";
+		$valueOrPlaceHolder = Tools::getValue($name) ? 'value="'.Tools::getValue($name).'"' : 'placeholder="'.htmlentities($defaultValue).'"';
+		return "<input type=\"{$type}\" name=\"{$name}\" " . $valueOrPlaceHolder ." autocomplete=\"new-password\" />";
 	}
 
 	private function getOrderStateOptions()
