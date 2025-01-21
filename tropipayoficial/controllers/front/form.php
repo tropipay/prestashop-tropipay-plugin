@@ -39,11 +39,17 @@ class TropipayoficialFormModuleFrontController extends ModuleFrontController
         $this->setTemplate('module:tropipayoficial/views/templates/hook/payment.tpl');
     }*/
     public function postProcess () {
+
+        $cart = $this->context->cart;
+
+        $paymentCard = $this->module->createParameter(array('cart' => $cart));
+        $urltpvd = $this->module->urltpvd;
+
         $this->context->smarty->assign([
-            'urltpvd' => $_POST["urltpvd"],
+            'urltpvd' => $urltpvd,
         ]);
 
         $this->setTemplate('module:tropipayoficial/views/templates/hook/payment.tpl');
-        Tools::redirect($_POST["urltpvd"]);
+        Tools::redirect($urltpvd);
     }
 }
