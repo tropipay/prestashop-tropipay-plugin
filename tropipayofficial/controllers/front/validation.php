@@ -5,7 +5,7 @@ require_once(dirname(__DIR__).'/../src/Services/ProcessCartAssociatedWithPayment
 require_once(dirname(__DIR__).'/../src/Exceptions/PaymentValidationException.php');
 require_once(dirname(__DIR__).'/../src/Exceptions/CartValidationException.php');
 
-class TropipayoficialValidationModuleFrontController extends ModuleFrontController  { 
+class TropipayofficialValidationModuleFrontController extends ModuleFrontController  { 
     
     private ProcessPayment $completePaymentService;
     private ProcessCartAssociatedWithPayment $processCartService;

@@ -27,29 +27,16 @@
 /**
  * @since 1.5.0
  */
-class TropipayoficialFormModuleFrontController extends ModuleFrontController
+class TropipayofficialIframeModuleFrontController extends ModuleFrontController
 {
-    /*public function initContent()
+    public function initContent()
     {
         parent::initContent();
         $this->context->smarty->assign([
-            'urltpvd' => $_POST["urltpvd"],
+            'src' => 'http://www.prestashop.com',
         ]);
 
-        $this->setTemplate('module:tropipayoficial/views/templates/hook/payment.tpl');
-    }*/
-    public function postProcess () {
-
-        $cart = $this->context->cart;
-
-        $paymentCard = $this->module->createParameter(array('cart' => $cart));
-        $urltpvd = $this->module->urltpvd;
-
-        $this->context->smarty->assign([
-            'urltpvd' => $urltpvd,
-        ]);
-
-        $this->setTemplate('module:tropipayoficial/views/templates/hook/payment.tpl');
-        Tools::redirect($urltpvd);
+        $this->setTemplate('module:tropipayoficial/views/templates/front/iframe.tpl');
     }
+
 }

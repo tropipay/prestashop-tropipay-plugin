@@ -12,47 +12,79 @@ if (! defined('_CAN_LOAD_FILES_'))
 
 require_once('src/TropipaySDK/ILogger.php');
 require_once('src/Infrastructure/Logger.php');
+require_once('src/Enums/Environment.php');
 
-class Tropipayoficial extends PaymentModule
+class TropipayOfficial extends PaymentModule
 {
-
-	private $_html = '';
-	private $html = '';
-	private $_postErrors = array();
-	private $environments = [
-		'https://www.tropipay.com',
-		'https://tropipay-dev.herokuapp.com'
+	private string $clientId;
+	private string $clientSecret;
+	private string $retryPayment;
+	private string $activateLogs;
+	private string $statusesLanguage;
+	private string $orderStatus;
+	private string $_html = '';
+	private string $html = '';
+	private array $_postErrors = array();
+	private array $environments = [
+		Environment::PRODUCTION => 'https://www.tropipay.com',
+		Environment::SANDBOX => 'https://tropipay-dev.herokuapp.com'
 	];
-
+	private array $config;
+	private string $env;
+	private string $urltpv;
+	public string $urltpvd;
 	public ILogger $logger;
+	private int $is_eu_compatible;
+	public array $post_errors;
+
+	private const DEFAULT_PAYMENT_STATUS = '2';
+	private const YES = 'si';
+	private const NO = 'no';
 
 	public function __construct()
 	{
 		$this->logger = new Logger();
-		$this->name = 'tropipayoficial';
+		$this->name = 'tropipayofficial';
 		$this->tab = 'payments_gateways';
 		$this->version = '2.2.0';
 		$this->author = 'TROPIPAY';
+		$this->need_instance = 1;
+
+		// TODO: declare the min and max versions supported
+		// $this->ps_versions_compliancy = [
+		// 	'min' => '1.6.0',
+		// 	'max' => '1.7.9'
+		// ];
 
 		$this->initializeProperties();
 		$this->loadConfiguration();
-
-		$this->currencies = true;
-		$this->currencies_mode = 'checkbox';
-
-		$this->env = (int)$this->config['TROPIPAY_URLTPV'];
+		$this->env = $this->config['urltpv'] ?? Environment::PRODUCTION;
 		$this->urltpv = $this->environments[$this->env];
-
+		
 		parent::__construct();
 
-		// $this->page = basename ( __FILE__, '.php' );
-		$this->displayName = $this->l('Tropipay');
-		$this->description = $this->l('Aceptar pagos con tarjeta mediante Tropipay');
+		$this->displayName = $this->translate('Tropipay');
+        $this->description = $this->translate('Aceptar pagos con tarjeta mediante Tropipay.');
+
+		$this->confirmUninstall = $this->translate('Esta seguro que desea desintalar?');
+
+		if (!Configuration::get('TROPIPAYOFFICIAL_NAME')) {
+			$this->warning = $this->translate('El nombre no ha sido especificado.');
+		}
 
 		// Mostrar aviso si faltan datos de config.
 		if ($this->missingConfiguration()) {
 			$this->warning = $this->l('Faltan datos por configurar en el módulo de Tropipay.');
 		}
+	}
+	
+	private function translate(string $text): string
+	{
+		//TODO: create the right i18n file
+		if (_PS_VERSION_ >= 8.0)
+			return $this->trans($text, [], 'Modules.tropipayofficial.Admin');
+
+		return $this->l($text);
 	}
 
 	private function initializeProperties()
@@ -84,45 +116,34 @@ class Tropipayoficial extends PaymentModule
 
 	private function setConfigurationProperties()
 	{
-		$this->nombre = $this->config['TROPIPAY_CLIENTID'] ?? null;
-		$this->codigo = $this->config['TROPIPAY_CLIENTSECRET'] ?? null;
-		$this->error_pago = $this->config['TROPIPAY_ERROR_PAGO'] ?? null;
-		$this->activar_log = $this->config['TROPIPAY_LOG'] ?? null;
-		$this->idiomas_estado = $this->config['TROPIPAY_IDIOMAS_ESTADO'] ?? null;
-		$this->estado_pedido = $this->config['TROPIPAY_ESTADO_PEDIDO'] ?? null;
+		$this->clientId = $this->config['TROPIPAY_CLIENTID'] ? $this->config['TROPIPAY_CLIENTID'] : '';
+		$this->clientSecret = $this->config['TROPIPAY_CLIENTSECRET'] ? $this->config['TROPIPAY_CLIENTSECRET'] : '';
+		$this->retryPayment = $this->config['TROPIPAY_ERROR_PAGO'] ? $this->config['TROPIPAY_ERROR_PAGO'] : self::NO;
+		$this->activateLogs = $this->config['TROPIPAY_LOG'] ? $this->config['TROPIPAY_LOG'] : self::YES;
+		$this->statusesLanguage = $this->config['TROPIPAY_IDIOMAS_ESTADO'] ? $this->config['TROPIPAY_IDIOMAS_ESTADO'] : '';
+		$this->orderStatus = $this->config['TROPIPAY_ESTADO_PEDIDO'] ? $this->config['TROPIPAY_ESTADO_PEDIDO'] : self::DEFAULT_PAYMENT_STATUS;
 	}
-
+	
 	private function missingConfiguration()
 	{
 		return !isset($this->urltpv, $this->nombre, $this->codigo, $this->error_pago, $this->activar_log, $this->idiomas_estado, $this->estado_pedido);
 	}
 
-	public function install()
-	{
-		if (!parent::install() || !$this->registerHooks() || !$this->initializeConfiguration()) {
-			return false;
+	public function install(): bool
+    {
+        if(parent::install()
+            && $this->registerHook('paymentOptions')
+            && $this->registerHook('paymentReturn')
+			&& Configuration::updateValue('TROPIPAYOFFICIAL_NAME', 'tropipay official'))
+		{
+			$this->tratarJSON();
+			return true;
 		}
-		$this->tratarJSON();
-		return true;
-	}
 
-	private function registerHooks()
-	{
-		return $this->registerHook('paymentReturn') &&
-			(_PS_VERSION_ >= 1.7 ? $this->registerHook('paymentOptions') : $this->registerHook('payment')) &&
-			(_PS_VERSION_ > '1.5' ? $this->registerHook('displayPaymentEU') : true);
-	}
+		return false;
+    }
 
-	private function initializeConfiguration()
-	{
-		return Configuration::updateValue('TROPIPAY_URLTPV', '0') &&
-			Configuration::updateValue('TROPIPAY_CLIENTID', $this->l('Escriba el clientId de la API de Tropipay')) &&
-			Configuration::updateValue('TROPIPAY_ERROR_PAGO', 'no') &&
-			Configuration::updateValue('TROPIPAY_LOG', 'no') &&
-			Configuration::updateValue('TROPIPAY_IDIOMAS_ESTADO', 'no') &&
-			Configuration::updateValue('TROPIPAY_ESTADO_PEDIDO', '2');
-	}
-
+	
 	/*
 	 * Tratamos el JSON es_addons_modules.json para que addons 
 	 * TPV Tropipay Pago tarjeta no pise nuestra versión 
@@ -142,27 +163,49 @@ class Tropipayoficial extends PaymentModule
 		}
 	}
 
+
 	public function uninstall()
+    {
+		return Configuration::deleteByName('TROPIPAY_URLTPV') 
+			&& Configuration::deleteByName('TROPIPAY_CLIENTID')
+			&& Configuration::deleteByName('TROPIPAY_CLIENTSECRET')
+			&& Configuration::deleteByName('TROPIPAY_ERROR_PAGO')
+			&& Configuration::deleteByName('TROPIPAY_LOG')
+			&& Configuration::deleteByName('TROPIPAY_IDIOMAS_ESTADO')
+			&& Configuration::deleteByName('TROPIPAY_ESTADO_PEDIDO')
+			&& Configuration::deleteByName('TROPIPAYOFFICIAL_NAME')
+			&& parent::uninstall();
+			
+    }
+
+	public function getContent()
 	{
-		return Configuration::deleteByName('TROPIPAY_URLTPV') &&
-			Configuration::deleteByName('TROPIPAY_CLIENTID') &&
-			Configuration::deleteByName('TROPIPAY_CLIENTSECRET') &&
-			Configuration::deleteByName('TROPIPAY_ERROR_PAGO') &&
-			Configuration::deleteByName('TROPIPAY_LOG') &&
-			Configuration::deleteByName('TROPIPAY_IDIOMAS_ESTADO') &&
-			Configuration::deleteByName('TROPIPAY_ESTADO_PEDIDO') &&
-			parent::uninstall();
+		if (Tools::isSubmit('btnSubmit')) {
+			$this->_postValidation();
+			if (!count($this->_postErrors))
+				$this->_postProcess();
+			else
+				foreach ($this->_postErrors as $err)
+					$this->html .= $this->displayError($err);
+		} else {
+			$this->_html .= '<br />';
+		}
+
+		$this->_html .= $this->_displayTropipay();
+		$this->_html .=	$this->_displayForm();
+
+		return $this->html;
 	}
 
 	private function _postValidation()
 	{
 		// Si al enviar los datos del formulario de config. hay campos vacios, mostrar errores.
 		if (Tools::isSubmit('btnSubmit')) {
-			if (! Tools::getValue('nombre'))
+			if (! Tools::getValue('clientId'))
 				$this->post_errors[] = $this->l('Se requiere el clientId de la API de Tropipay.');
-			if (! Tools::getValue('codigo'))
+			if (! Tools::getValue('clientSecret'))
 				$this->post_errors[] = $this->l('Se requiere el clientSecret de la API de Tropipay.');
-			if (Tools::getValue('estado_pedido') === '-1')
+			if (Tools::getValue('orderStatus') === '-1')
 				$this->post_errors[] = $this->l('Ha de indicar un estado de pedido válido.');
 		}
 	}
@@ -171,22 +214,22 @@ class Tropipayoficial extends PaymentModule
 	{
 		// Actualizar la config. en la BBDD
 		if (Tools::isSubmit('btnSubmit')) {
-			Configuration::updateValue('TROPIPAY_URLTPV', Tools::getValue('urltpv'));
-			Configuration::updateValue('TROPIPAY_CLIENTID', Tools::getValue('nombre'));
-			Configuration::updateValue('TROPIPAY_CLIENTSECRET', Tools::getValue('codigo'));
-			Configuration::updateValue('TROPIPAY_ERROR_PAGO', Tools::getValue('error_pago'));
-			Configuration::updateValue('TROPIPAY_LOG', Tools::getValue('activar_log'));
-			Configuration::updateValue('TROPIPAY_IDIOMAS_ESTADO', Tools::getValue('idiomas_estado'));
-			Configuration::updateValue('TROPIPAY_ESTADO_PEDIDO', Tools::getValue('estado_pedido'));
+			$this->urltpv = $this->environments[(int)Tools::getValue('urltpv')];
+			Configuration::updateValue('TROPIPAY_URLTPV', $this->urltpv );
+			Configuration::updateValue('TROPIPAY_CLIENTID', Tools::getValue('clientId'));
+			Configuration::updateValue('TROPIPAY_CLIENTSECRET', Tools::getValue('clientSecret'));
+			Configuration::updateValue('TROPIPAY_ERROR_PAGO', Tools::getValue('retryPayment'));
+			Configuration::updateValue('TROPIPAY_LOG', Tools::getValue('activateLogs'));
+			Configuration::updateValue('TROPIPAY_IDIOMAS_ESTADO', Tools::getValue('statusLanguages'));
+			Configuration::updateValue('TROPIPAY_ESTADO_PEDIDO', Tools::getValue('orderStatus'));
 		}
 		$this->html .= $this->displayConfirmation($this->l('Configuración actualizada'));
 	}
 
-
 	private function _displayTropipay()
 	{
 		// lista de payments
-		$this->html .= '<img src="../modules/tropipayoficial/views/img/tropipay.png" style="float:left; margin-right:15px;"><b><br />'
+		$this->html .= '<img src="../modules/tropipayofficial/views/img/tropipay.png" style="float:left; margin-right:15px;"><b><br />'
 			. $this->l('Este módulo le permite aceptar pagos con tarjeta.') . '</b><br />'
 			. $this->l('Si el cliente elije este modo de pago, podrá pagar de forma automática.') . '<br /><br /><br />';
 	}
@@ -203,17 +246,17 @@ class Tropipayoficial extends PaymentModule
 	private function getTpvConfigurationFieldset()
 	{
 		$entornoOptions = $this->getEntornoOptions();
-		$clientIdInput = $this->getInputField('nombre', "Escribe el client id del API de Tropipay");
-		$clientSecretInput = $this->getInputField('codigo', "Escribe el client secret", "password");
+		$clientIdInput = $this->getInputField('clientId', "Escribe el client id del API de Tropipay");
+		$clientSecretInput = $this->getInputField('clientSecret', "Escribe el client secret", "password");
 
 		return '
 			<fieldset>
 				<legend><img src="../img/admin/contact.gif" />' . $this->l('Configuración del TPV') . '</legend>
 				<table border="0" width="680" cellpadding="0" cellspacing="0" id="form">
 					<tr><td colspan="2">' . $this->l('Por favor completa los datos de configuración del comercio') . '.<br /><br /></td></tr>
-					<tr><td width="255"><label for="urltpv">' . $this->l('Entorno de Tropipay') . '</label></td><td width="425">' . $entornoOptions . '</td></tr>
-					<tr><td width="255"><label for="nombre">' . $this->l('Client ID') . '</label></td><td width="425">' . $clientIdInput . '</td></tr>
-					<tr><td width="255"><label for="codigo">' . $this->l('Client Secret') . '</label></td><td width="425">' . $clientSecretInput . '</td></tr>
+					<tr><td width="255">' . $this->l('Entorno de Tropipay') . '</td><td width="425">' . $entornoOptions . '</td></tr>
+					<tr><td width="255">' . $this->l('Client ID') . '</td><td width="425">' . $clientIdInput . '</td></tr>
+					<tr><td width="255">' . $this->l('Client Secret') . '</td><td width="425">' . $clientSecretInput . '</td></tr>
 				</table>
 			</fieldset>
 			<br>';
@@ -222,17 +265,17 @@ class Tropipayoficial extends PaymentModule
 	private function getCustomizationFieldset()
 	{
 		$orderStateOptions = $this->getOrderStateOptions();
-		$errorPagoOptions = $this->getRadioOptions('error_pago', 'En caso de error, permitir repetir el pedido', $this->error_pago);
-		$activarLogOptions = $this->getRadioOptions('activar_log', 'Activar trazas de log');
+		$paymentErrorOptions = $this->getRadioOptions('retryPayment', 'En caso de error, permitir repetir el pedido', $this->retryPayment);
+		$activateLogOptions = $this->getRadioOptions('activateLogs', 'Activar trazas de log', $this->activateLogs);
 
 		return '
 			<fieldset>
 				<legend><img src="../img/admin/asterisk.gif" />' . $this->l('Personalización') . '</legend>
 				<table border="0" width="680" cellpadding="0" cellspacing="0" id="form">
 					<tr ><td colspan="2">' . $this->l('Por favor completa los datos adicionales') . '.<br /><br /></td></tr>
-					<tr ><td width="340" style="height: 35px;"><label for="estado_pedido">' . $this->l('Estado del pedido tras verificar el pago') . '</label></td><td>' . $orderStateOptions . '</td></tr>
-					<tr ><td width="340" style="height: 35px;"><label for="error_pago">' . $this->l('En caso de error, permitir repetir el pedido') . '</label></td><td>' . $errorPagoOptions . '</td></tr>
-					<tr ><td width="340" style="height: 35px;"><label for="activar_log">' . $this->l('Activar trazas de log') . '</label></td><td>' . $activarLogOptions . '</td></tr>
+					<tr ><td width="340" style="height: 35px;">' . $this->l('Estado del pedido tras verificar el pago') . '</td><td>' . $orderStateOptions . '</td></tr>
+					<tr ><td width="340" style="height: 35px;">' . $this->l('En caso de error, permitir repetir el pedido') .'</td><td>' . $paymentErrorOptions . '</td></tr>
+					<tr ><td width="340" style="height: 35px;">' . $this->l('Activar trazas de log') . '</td><td>' . $activateLogOptions . '</td></tr>
 				</table>
 			</fieldset>
 			<br>';
@@ -258,25 +301,25 @@ class Tropipayoficial extends PaymentModule
 
 	private function getOrderStateOptions()
 	{
-		$id_estado_pedido = Tools::getValue('estado_pedido', $this->estado_pedido);
-		$order_states = OrderState::getOrderStates($this->context->language->id);
+		$orderStatusId = Tools::getValue('orderStatus', $this->orderStatus);
+		$orderStates = OrderState::getOrderStates($this->context->language->id);
 		$options = '';
 
-		foreach ($order_states as $state) {
+		foreach ($orderStates as $state) {
 			if ($state['unremovable'] == '1') {
-				$selected = ($id_estado_pedido == $state['id_order_state']) ? 'selected' : '';
+				$selected = ($orderStatusId == $state['id_order_state']) ? 'selected' : '';
 				$options .= '<option value="' . $state['id_order_state'] . '" ' . $selected . '>' . $this->l($state['name']) . '</option>';
 			}
 		}
 
-		return '<select name="estado_pedido" id="estado_pago_1">' . $options . '</select>';
+		return '<select name="orderStatus" id="estado_pago_1">' . $options . '</select>';
 	}
 
 	private function getRadioOptions($name, $defaultValue = null)
 	{
 		$value = Tools::getValue($name, $this->$name);
-		$checkedYes = ($value === 'si') ? ' checked="checked" ' : '';
-		$checkedNo = ($value === 'no') ? ' checked="checked" ' : '';
+		$checkedYes = ($value === self::YES) ? ' checked="checked" ' : '';
+		$checkedNo = ($value === self::NO) ? ' checked="checked" ' : '';
 
 		return '
 			<input type="radio" name="' . $name . '" id="' . $name . '_1" value="si" ' . $checkedYes . '/>
@@ -285,23 +328,127 @@ class Tropipayoficial extends PaymentModule
 			<img src="../img/admin/disabled.gif" alt="' . $this->l('Desactivado') . '" title="' . $this->l('Desactivado') . '" />';
 	}
 
-	public function getContent()
+	public function hookDisplayPaymentEU($params)
 	{
-		if (Tools::isSubmit('btnSubmit')) {
-			$this->_postValidation();
-			if (!count($this->_postErrors))
-				$this->_postProcess();
-			else
-				foreach ($this->_postErrors as $err)
-					$this->html .= $this->displayError($err);
-		} else {
-			$this->_html .= '<br />';
+		if ($this->hookPayment($params) == null) {
+			return null;
 		}
 
-		$this->_html .= $this->_displayTropipay();
-		$this->_html .=	$this->_displayForm();
+		return array(
+			'cta_text' => "Pagar con tarjeta",
+			'logo' => _MODULE_DIR_ . "tropipayofficial/views/img/tarjetas.png",
+			'form' => $this->display(__FILE__, "views/templates/hook/payment_eu.tpl"),
+		);
+	}
 
-		return $this->html;
+	/*
+	 * HOOK V1.6
+	 */
+	public function hookPayment($params)
+	{
+
+		if (! $this->active) {
+			return;
+		}
+
+		if (! $this->checkCurrency($params['cart'])) {
+			return;
+		}
+
+
+		return $this->display(__FILE__, 'payment.tpl');
+	}
+
+	/*
+	 * HOOK V1.7
+	 */
+	public function hookPaymentOptions($params)
+	{
+
+		if (! $this->active) {
+			return;
+		}
+
+		if (! $this->checkCurrency($params['cart'])) {
+			return;
+		}
+
+
+		$newOption = new \PrestaShop\PrestaShop\Core\Payment\PaymentOption();
+		$newOption->setCallToActionText($this->l('Pago con Tarjeta a través de Tropipay'))
+			->setAction($this->context->link->getModuleLink($this->name, 'form', array(), true));
+
+		$payment_options = [$newOption];
+
+		return $payment_options;
+	}
+
+	public function hookPaymentReturn($params)
+	{
+		$totaltoPay = null;
+		$idOrder = null;
+
+		if (_PS_VERSION_ >= 1.7) {
+			$totaltoPay = Tools::displayPrice($params['order']->getOrdersTotalPaid(), new Currency($params['order']->id_currency), false);
+			$idOrder = $params['order']->id;
+		} else {
+			$totaltoPay = Tools::displayPrice($params['total_to_pay'], $params['currencyObj'], false);
+			$idOrder = $params['objOrder']->id;
+		}
+
+		if (! $this->active) {
+			return;
+		}
+
+		$this->smarty->assign(array(
+			'total_to_pay' => $totaltoPay,
+			'status' => 'ok',
+			'id_order' => $idOrder,
+			'this_path' => $this->_path
+		));
+
+		return $this->display(__FILE__, 'payment_return.tpl');
+	}
+
+	public function checkCurrency($cart)
+	{
+		$currency_order = new Currency($cart->id_currency);
+		$currencies_module = $this->getCurrency($cart->id_currency);
+
+		if (is_array($currencies_module)) {
+			foreach ($currencies_module as $currency_module) {
+				if ($currency_order->id == $currency_module['id_currency']) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	public function getTropipayCookie($order)
+	{
+		$key = "tropipay" . str_pad($order, 12, "0", STR_PAD_LEFT);
+
+		if (_PS_VERSION_ < 1.7) {
+			if (isset($_COOKIE[$key]))
+				return $_COOKIE[$key];
+		} else {
+			if (Context::getContext()->cookie->__isset($key))
+				return Context::getContext()->cookie->__get($key);
+		}
+
+		return null;
+	}
+
+	public function setTropipayCookie($order, $valor)
+	{
+		$key = "tropipay" . str_pad($order, 12, "0", STR_PAD_LEFT);
+
+		if (_PS_VERSION_ < 1.7) {
+			setcookie($key, $valor, time() + (3600 * 24), __PS_BASE_URI__);
+		} else {
+			Context::getContext()->cookie->__set($key, $valor);
+		}
 	}
 
 	public function createParameter($params)
@@ -341,7 +488,7 @@ class Tropipayoficial extends PaymentModule
 		$this->logger->info(" - NÚMERO PEDIDO: Número de pedido interno: '" . $orderId . "'. Número de pedido enviado a TROPIPAY: '" . $numpedido . "'");
 
 		// Fuc
-		$codigo = $this->codigo;
+		$codigo = $this->clientSecret;
 		// ISO Moneda
 		$moneda = $currency->iso_code;
 
@@ -349,10 +496,10 @@ class Tropipayoficial extends PaymentModule
 		// URL de Respuesta Online
 		if (empty($_SERVER['HTTPS'])) {
 			$protocolo = 'http://';
-			$urltienda = $protocolo . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . 'index.php?fc=module&module=tropipayoficial&controller=validation';
+			$urltienda = $protocolo . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . 'index.php?fc=module&module=tropipayofficial&controller=validation';
 		} else {
 			$protocolo = 'https://';
-			$urltienda = $protocolo . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . 'index.php?fc=module&module=tropipayoficial&controller=validation';
+			$urltienda = $protocolo . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . 'index.php?fc=module&module=tropipayofficial&controller=validation';
 		}
 
 		// Product Description
@@ -364,7 +511,7 @@ class Tropipayoficial extends PaymentModule
 		$productos = str_replace("%", "&#37;", $productos);
 
 		// Idiomas del TPV
-		$idiomas_estado = $this->idiomas_estado;
+		$idiomas_estado = $this->statusesLanguage;
 		if ($idiomas_estado == 'si') {
 			$idioma_web = Tools::substr($_SERVER['HTTP_ACCEPT_LANGUAGE'], 0, 2);
 
@@ -429,25 +576,20 @@ class Tropipayoficial extends PaymentModule
 		// $miObj->setParameter("Ds_Merchant_Titular",$this->nombre);
 		$miObj->setParameter("Ds_Merchant_Titular", $customer->firstname . " " . $customer->lastname);
 		$miObj->setParameter("Ds_Merchant_MerchantData", sha1($urltienda));
-		$miObj->setParameter("Ds_Merchant_MerchantName", $this->nombre);
+		$miObj->setParameter("Ds_Merchant_MerchantName", $this->clientId);
 		// $miObj->setParameter("Ds_Merchant_MerchantName",$customer->firstname." ".$customer->lastname);
 
 		$miObj->setParameter("Ds_Merchant_Module", "PR_tropipay_" . $this->version);
 
 		$billingInfo = new Address($params['cart']->id_address_invoice);
 
-		$ds_merchant_usermail = $this->nombre;
+		$ds_merchant_usermail = $this->clientId;
 		$ds_merchant_userpassword = $codigo;
-
-		$data1 = array("email" => $ds_merchant_usermail, "password" => $ds_merchant_userpassword);
-		$data_string = json_encode($data1);
-
-		$tropipay_server = $this->urltpv;
+		$tropipay_server = Configuration::get('TROPIPAY_URLTPV');
 
 		$curl = curl_init();
 		curl_setopt_array($curl, array(
 			CURLOPT_URL => $tropipay_server . "/api/v2/access/token",
-			//CURLOPT_HTTPHEADER => array ('Content-Type: application/json','Content-Length: ' . strlen($data_string)),
 			CURLOPT_HTTPHEADER => array('Content-Type: application/json'),
 			CURLOPT_RETURNTRANSFER => true,
 			CURLOPT_ENCODING => "",
@@ -465,8 +607,16 @@ class Tropipayoficial extends PaymentModule
 			//echo "cURL Error #:" . $err;
 		} else {
 			//echo $response;
-			$character = json_decode($response);
-			$tokent = $character->access_token;
+			$response = json_decode($response);
+			if (property_exists($response, 'errors'))
+			{	
+				var_dump($response);
+				$errors = $response->errors;
+				$this->logger->error($errors[0]->title.": ".$errors[0]->detail);
+				Tools::redirect('index.php?controller=order&step=1');
+			}
+
+			$tokent = $response->access_token;
 
 			$this->logger->info(" - Llamada a la api login: '" . $ds_merchant_usermail . "'. Token: '" . $tokent . "'");
 
@@ -547,146 +697,26 @@ class Tropipayoficial extends PaymentModule
 				$this->logger->info(" - Respuesta paymentcards: '" . $response . "'");
 
 				$this->logger->info(" - Short url: '" . $shorturl . "'");
-
-				//$form['#action'] = $shorturl;
-				//dsm($form);
-				/* $form['submit'] = array(
-					  '#type' => 'submit',
-					  '#value' => t('Proceed to Tropipay'),
-					);*/
 			}
 		}
 
 		$this->urltpvd = $shorturl;
 
 		$this->smarty->assign(array(
-			'urltpvd' => $this->urltpvd,
+			'urltpvd' => $this->urltpv,
 			'this_path' => $this->_path
 		));
-	}
-
-	public function hookDisplayPaymentEU($params)
-	{
-		if ($this->hookPayment($params) == null) {
-			return null;
-		}
-
-		return array(
-			'cta_text' => "Pagar con tarjeta",
-			'logo' => _MODULE_DIR_ . "tropipayoficial/views/img/tarjetas.png",
-			'form' => $this->display(__FILE__, "views/templates/hook/payment_eu.tpl"),
-		);
-	}
-
-
-	/*
-	 * HOOK V1.6
-	 */
-	public function hookPayment($params)
-	{
-
-		if (! $this->active) {
-			return;
-		}
-
-		if (! $this->checkCurrency($params['cart'])) {
-			return;
-		}
-
-
-		return $this->display(__FILE__, 'payment.tpl');
-	}
-
-	/*
-	 * HOOK V1.7
-	 */
-	public function hookPaymentOptions($params)
-	{
-
-		if (! $this->active) {
-			return;
-		}
-
-		if (! $this->checkCurrency($params['cart'])) {
-			return;
-		}
-
-
-		$newOption = new \PrestaShop\PrestaShop\Core\Payment\PaymentOption();
-		$newOption->setCallToActionText($this->l('Pago con Tarjeta a través de Tropipay'))
-			->setAction($this->context->link->getModuleLink($this->name, 'form', array(), true));
-
-		$payment_options = [$newOption];
-
-		return $payment_options;
-	}
-
-	public function hookPaymentReturn($params)
-	{
-		$totaltoPay = null;
-		$idOrder = null;
-
-		if (_PS_VERSION_ >= 1.7) {
-			$totaltoPay = Tools::displayPrice($params['order']->getOrdersTotalPaid(), new Currency($params['order']->id_currency), false);
-			$idOrder = $params['order']->id;
-		} else {
-			$totaltoPay = Tools::displayPrice($params['total_to_pay'], $params['currencyObj'], false);
-			$idOrder = $params['objOrder']->id;
-		}
-
-		if (! $this->active) {
-			return;
-		}
-
-		$this->smarty->assign(array(
-			'total_to_pay' => $totaltoPay,
-			'status' => 'ok',
-			'id_order' => $idOrder,
-			'this_path' => $this->_path
-		));
-
-		return $this->display(__FILE__, 'payment_return.tpl');
-	}
-
-
-	public function checkCurrency($cart)
-	{
-		$currency_order = new Currency($cart->id_currency);
-		$currencies_module = $this->getCurrency($cart->id_currency);
-
-		if (is_array($currencies_module)) {
-			foreach ($currencies_module as $currency_module) {
-				if ($currency_order->id == $currency_module['id_currency']) {
-					return true;
-				}
-			}
-		}
-		return false;
-	}
-
-	public function getTropipayCookie($order)
-	{
-		$key = "tropipay" . str_pad($order, 12, "0", STR_PAD_LEFT);
-
-		if (_PS_VERSION_ < 1.7) {
-			if (isset($_COOKIE[$key]))
-				return $_COOKIE[$key];
-		} else {
-			if (Context::getContext()->cookie->__isset($key))
-				return Context::getContext()->cookie->__get($key);
-		}
-
-		return null;
-	}
-
-	public function setTropipayCookie($order, $valor)
-	{
-		$key = "tropipay" . str_pad($order, 12, "0", STR_PAD_LEFT);
-
-		if (_PS_VERSION_ < 1.7) {
-			setcookie($key, $valor, time() + (3600 * 24), __PS_BASE_URI__);
-		} else {
-			Context::getContext()->cookie->__set($key, $valor);
-		}
 	}
 }
+
+
+
+
+
+
+
+
+
+
+
+
