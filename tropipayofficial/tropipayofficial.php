@@ -103,6 +103,7 @@ class TropipayOfficial extends PaymentModule
 	{
 		$this->config = Configuration::getMultiple(array(
 			'TROPIPAY_URLTPV',
+			'TROPIPAY_ENVIRONMENT',
 			'TROPIPAY_CLIENTID',
 			'TROPIPAY_CLIENTSECRET',
 			'TROPIPAY_ERROR_PAGO',
@@ -167,6 +168,7 @@ class TropipayOfficial extends PaymentModule
 	public function uninstall()
     {
 		return Configuration::deleteByName('TROPIPAY_URLTPV') 
+		&& Configuration::deleteByName('TROPIPAY_ENVIRONMENT')
 			&& Configuration::deleteByName('TROPIPAY_CLIENTID')
 			&& Configuration::deleteByName('TROPIPAY_CLIENTSECRET')
 			&& Configuration::deleteByName('TROPIPAY_ERROR_PAGO')
@@ -216,7 +218,11 @@ class TropipayOfficial extends PaymentModule
 		if (Tools::isSubmit('btnSubmit')) {
 			$this->urltpv = $this->environments[(int)Tools::getValue('urltpv')];
 			Configuration::updateValue('TROPIPAY_URLTPV', $this->urltpv );
+			$this->env = Tools::getValue('urltpv');
+			Configuration::updateValue('TROPIPAY_ENVIRONMENT', Tools::getValue('urltpv'));
+			$this->clientId = Tools::getValue('clientId');
 			Configuration::updateValue('TROPIPAY_CLIENTID', Tools::getValue('clientId'));
+			$this->clientSecret = Tools::getValue('clientSecret');
 			Configuration::updateValue('TROPIPAY_CLIENTSECRET', Tools::getValue('clientSecret'));
 			Configuration::updateValue('TROPIPAY_ERROR_PAGO', Tools::getValue('retryPayment'));
 			Configuration::updateValue('TROPIPAY_LOG', Tools::getValue('activateLogs'));
@@ -246,8 +252,8 @@ class TropipayOfficial extends PaymentModule
 	private function getTpvConfigurationFieldset()
 	{
 		$entornoOptions = $this->getEntornoOptions();
-		$clientIdInput = $this->getInputField('clientId', "Escribe el client id del API de Tropipay");
-		$clientSecretInput = $this->getInputField('clientSecret', "Escribe el client secret", "password");
+		$clientIdInput = $this->getInputField('clientId', "Escribe el client id del API de Tropipay", $this->clientId);
+		$clientSecretInput = $this->getInputField('clientSecret', "Escribe el client secret", $this->clientSecret, "password");
 
 		return '
 			<fieldset>
@@ -283,9 +289,9 @@ class TropipayOfficial extends PaymentModule
 
 	private function getEntornoOptions()
 	{
-		$environment = Tools::getValue('urltpv', Tools::getValue('env', $this->env));
-		$production = ($environment == 1) ? ' selected="selected" ' : '';
-		$sandbox = ($environment == 2) ? ' selected="selected" ' : '';
+		$environment = Configuration::get('TROPIPAY_ENVIRONMENT') ?? $this->env;
+		$production = ($environment == Environment::PRODUCTION) ? ' selected="selected" ' : '';
+		$sandbox = ($environment == Environment::SANDBOX) ? ' selected="selected" ' : '';
 
 		return '<select name="urltpv">
 					<option value="1"' . $production . '>' . $this->l('Real') . '</option>
@@ -293,9 +299,9 @@ class TropipayOfficial extends PaymentModule
 				</select>';
 	}
 
-	private function getInputField($name, $defaultValue, $type = "text")
+	private function getInputField($name, $defaultValue, $value = null, $type = "text")
 	{	
-		$valueOrPlaceHolder = Tools::getValue($name) ? 'value="'.Tools::getValue($name).'"' : 'placeholder="'.htmlentities($defaultValue).'"';
+		$valueOrPlaceHolder = $value ? 'value="'.$value.'"' : 'placeholder="'.htmlentities($defaultValue).'"';
 		return "<input type=\"{$type}\" name=\"{$name}\" " . $valueOrPlaceHolder ." autocomplete=\"new-password\" />";
 	}
 
